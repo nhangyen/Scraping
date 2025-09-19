@@ -38,20 +38,19 @@ class DanTriCrawler(BaseCrawler):
             ),
         )
         self.article_type_dict = {
-            0: "xa-hoi",
-            1: "the-gioi",
-            2: "kinh-doanh",
-            3: "bat-dong-san",
-            4: "the-thao",
-            5: "lao-dong-viec-lam",
-            6: "tam-long-nhan-ai",
-            7: "suc-khoe",
-            8: "van-hoa",
-            9: "giai-tri",
-            10: "suc-manh-so",
-            11: "giao-duc",
-            12: "an-sinh",
-            13: "phap-luat"
+            # 0: "doi-song",
+            # 1: "the-gioi",
+            0: "kinh-doanh",
+            1: "bat-dong-san",
+            2: "the-thao",
+            3: "noi-vu",
+            4: "tam-long-nhan-ai",
+            5: "suc-khoe",
+            6: "cong-nghe",
+            7: "giai-tri",
+            8: "thoi-su",
+            9: "giao-duc",
+            10: "du-lich"
         }   
         
     def extract_content(self, url: str) -> tuple:

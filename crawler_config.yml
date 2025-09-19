@@ -1,5 +1,5 @@
 # Web that want to crawls (only support vnexpress now)
-webname: "vietnamnet"
+webname: "dantri"
 
 # tasks = ["url", "type"]
 task: "type"
