@@ -1,0 +1,38 @@
+# Web that want to crawls (only support vnexpress now)
+webname: "vietnamnet"
+
+# tasks = ["url", "type"]
+task: "type"
+
+#logger config file path
+logger_fpath: "logger/logger_config.yml"
+urls_fpath: "urls.txt"
+output_dpath: "result"
+num_workers: 5
+
+# if task == "type": 
+# article_type == "all" to crawl all of types
+article_type: "all"
+total_pages: 10
+
+# python VNNewsCrawler.py --config crawler_config.yml
+
+# Optional performance/politeness knobs (safe defaults if omitted)
+# Increase carefully to avoid being blocked.
+# max_rps: Requests per second per host (float). Example: 1.5
+# timeout: Per-request timeout in seconds. Example: 12
+# retry_total: Total retries for transient errors. Example: 4
+# retry_backoff: Exponential backoff factor. Example: 0.6
+# respect_robots: true|false (enable to respect site's robots.txt)
+# pool_connections: HTTP connection pool base size. Example: 50
+# pool_maxsize: Max connections in pool. Example: 100
+# proxy: http(s) proxy string, e.g. http://user:pass@host:port
+#
+# max_rps: 1.5
+# timeout: 12
+# retry_total: 4
+# retry_backoff: 0.6
+# respect_robots: false
+# pool_connections: 50
+# pool_maxsize: 100
+# proxy: null
