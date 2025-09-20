@@ -40,17 +40,17 @@ class DanTriCrawler(BaseCrawler):
         self.article_type_dict = {
             # 0: "doi-song",
             # 1: "the-gioi",
-            0: "kinh-doanh",
-            1: "bat-dong-san",
-            2: "the-thao",
-            3: "noi-vu",
-            4: "tam-long-nhan-ai",
-            5: "suc-khoe",
-            6: "cong-nghe",
-            7: "giai-tri",
-            8: "thoi-su",
-            9: "giao-duc",
-            10: "du-lich"
+            # 0: "kinh-doanh",
+            # 0: "bat-dong-san",
+            # 1: "the-thao",
+            # 2: "noi-vu",
+            # 0: "tam-long-nhan-ai",
+            0: "suc-khoe",
+            1: "cong-nghe",
+            2: "giai-tri",
+            3: "thoi-su",
+            4: "giao-duc",
+            5: "du-lich"
         }   
         
     def extract_content(self, url: str) -> tuple:
@@ -116,7 +116,7 @@ class DanTriCrawler(BaseCrawler):
         # ensure output directory exists and append JSON line to a single file
         out_dir = Path(getattr(self, "output_dpath", "."))  # fallback to current dir
         out_dir.mkdir(parents=True, exist_ok=True)
-        central_fpath = out_dir / "records.jsonl"
+        central_fpath = out_dir / "dantri_records.jsonl"
 
         with self._write_lock:
             with open(central_fpath, "a", encoding="utf-8") as file:
