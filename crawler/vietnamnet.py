@@ -2,23 +2,23 @@ import requests
 import sys
 from pathlib import Path
 import json
+import re
 import threading
 
 from bs4 import BeautifulSoup
-from utils.http_client import HttpClient, HttpClientConfig
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 
+from utils.http_client import HttpClient, HttpClientConfig
 from logger import log
 from crawler.base_crawler import BaseCrawler
 from utils.bs4_utils import get_text_from_tag
 
 # module-level lock for safe concurrent appends
 _write_lock = threading.Lock()
-
 
 class VietNamNetCrawler(BaseCrawler):
 
@@ -37,30 +37,75 @@ class VietNamNetCrawler(BaseCrawler):
                 rotate_user_agent=True,
                 respect_robots=getattr(self, "respect_robots", False),
                 proxy=getattr(self, "proxy", None),
+                pool_connections=getattr(self, "pool_connections", 50),
+                pool_maxsize=getattr(self, "pool_maxsize", 100),
             ),
         )
         self.article_type_dict = {
             0: "thoi-su",
             1: "kinh-doanh",
             2: "the-thao",
-            3: "van-hoa-giai-tri",
-            4: "cong-nghe",
+            3: "van-hoa",
+            4: "giai-tri",
             5: "the-gioi",
             6: "doi-song",
             7: "giao-duc",
             8: "suc-khoe",
-            9: "chinh-tri",
+            9: "thong-tin-truyen-thong",
             10: "phap-luat",
             11: "oto-xe-may",
             12: "bat-dong-san",
             13: "du-lich",
-            14: "dan-toc-ton-giao"
-        }   
+        }
+        # Mapping for display category names
+        self.category_display_dict = {
+            "thoi-su": "Thời sự",
+            "kinh-doanh": "Kinh doanh",
+            "the-thao": "Thể thao",
+            "van-hoa": "Văn hóa",
+            "giai-tri": "Giải trí",
+            "the-gioi": "Thế giới",
+            "doi-song": "Đời sống",
+            "giao-duc": "Giáo dục",
+            "suc-khoe": "Sức khỏe",
+            "thong-tin-truyen-thong": "Thông tin truyền thông",
+            "phap-luat": "Pháp luật",
+            "oto-xe-may": "Oto xe máy",
+            "bat-dong-san": "Bất động sản",
+            "du-lich": "Du lịch"
+        }
+        # Track current article type being crawled
+        self.current_article_type = None
+
+    def crawl_type(self, article_type, urls_dpath, results_dpath):
+        """" Crawl total_pages of articles in specific type """
+        self.logger.info(f"Crawl articles type {article_type}")
+        # Set current article type for category extraction
+        self.current_article_type = article_type
+        error_urls = list()
+        
+        # getting urls
+        self.logger.info(f"Getting urls of {article_type}...")
+        articles_urls = self.get_urls_of_type(article_type)
+        articles_urls_fpath = "/".join([urls_dpath, f"{article_type}-vnnet.txt"])
+        with open(articles_urls_fpath, "w") as urls_file:
+            urls_file.write("\n".join(articles_urls)) 
+
+        # crawling urls
+        self.logger.info(f"Crawling from urls of {article_type}...")
+        results_type_dpath = "/".join([results_dpath, article_type])
+        error_urls = self.crawl_urls(articles_urls_fpath, results_type_dpath)
+        
+        return error_urls
         
     def extract_content(self, url: str) -> tuple:
         """
-        Extract title, sapo (description) and full content text from url
-        Returns (title, sapo_text, content_text) all as strings or (None, None, None) on failure
+        Extract title, description, paragraphs and category from url
+        @param url (str): url to crawl
+        @return title (str)
+        @return description (generator)
+        @return paragraphs (generator)
+        @return category (str)
         """
         content = self.http.get(url).content
         soup = BeautifulSoup(content, "html.parser")
@@ -70,55 +115,71 @@ class VietNamNetCrawler(BaseCrawler):
         p_tag = soup.find("div", class_=["maincontent", "main-content"])
 
         if [var for var in (title_tag, desc_tag, p_tag) if var is None]:
-            return None, None, None
+            return None, None, None, None
         
-        title = title_tag.get_text(strip=True)
+        title = title_tag.text
 
-        # sapo_text: nối tất cả phần trong desc_tag
-        desc_parts = [get_text_from_tag(p).strip() for p in desc_tag.contents if get_text_from_tag(p).strip()]
-        sapo_text = " ".join(desc_parts)
+        # Get category from current article type being crawled
+        category = "Tin tức"  # default
+        if self.current_article_type:
+            category = self.category_display_dict.get(
+                self.current_article_type, 
+                self.current_article_type.replace("-", " ").title()
+            )
 
-        # paragraphs: nối tất cả <p> thành nội dung văn bản
-        para_texts = [get_text_from_tag(p).strip() for p in p_tag.find_all("p") if get_text_from_tag(p).strip()]
-        content_text = "\n".join([title] + para_texts) if para_texts else title
+        description = (get_text_from_tag(p) for p in desc_tag.contents)
+        paragraphs = (get_text_from_tag(p) for p in p_tag.find_all("p"))
 
-        return title, sapo_text, content_text
+        return title, description, paragraphs, category
 
     def write_content(self, url: str, output_fpath: str) -> bool:
         """
-        From url, extract title, sapo and full content then append a JSON record to a common file.
-        Record format:
-        {
-            "instruction": "Tóm tắt văn bản sau",
-            "input": content_text,
-            "output": sapo_text
-        }
-        All records are appended to the same file: <output_dpath>/records.jsonl (fallback to current dir).
-        """
-        title, sapo_text, content_text = self.extract_content(url)
-                    
-        if title is None:
-            return False
+        From url, extract title, description and paragraphs then append JSON record
+        to a single file: <output_dpath>/records.jsonl
 
         record = {
-            "instruction": "Tóm tắt văn bản sau",
+            "title": title,
             "input": content_text,
-            "output": sapo_text
+            "output": sapo_text,
+            "category": category,
+            "source": "VietnamNet"
+        }
+        """
+        title, description, paragraphs, category = self.extract_content(url)
+                    
+        if title == None:
+            return False
+
+        # materialize generators
+        description_list = list(description) if description is not None else []
+        paragraphs_list = list(paragraphs) if paragraphs is not None else []
+
+        # sapo_text is the short description (sapo)
+        sapo_text = "\n".join([p.strip() for p in description_list if p is not None])
+        sapo_text = re.sub(r'^\([^)]*\)\s*[-–—:]\s*', '', sapo_text).strip()
+
+        # content_text is the full article text; include title and paragraphs
+        body_text = "\n".join([p.strip() for p in paragraphs_list if p is not None])
+        content_text = title.strip() + ("\n" + body_text if body_text else "")
+
+        record = {
+            "title": title.strip(),
+            "input": content_text,
+            "output": sapo_text,
+            "category": category,
+            "source": "VietnamNet"
         }
 
-        # determine common output file in output_dpath (fallback to cwd)
-        out_dir = Path(getattr(self, "output_dpath", "."))
+        # ensure output directory exists and append JSON line to the common file
+        out_dir = Path(getattr(self, "output_dpath", "."))  # fallback to current dir
         out_dir.mkdir(parents=True, exist_ok=True)
-        central_fpath = out_dir / "records.jsonl"
+        central_fpath = out_dir / "vietnamnet_records.jsonl"
 
-        try:
-            with _write_lock:
-                with open(central_fpath, "a", encoding="utf-8") as file:
-                    file.write(json.dumps(record, ensure_ascii=False) + "\n")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to write record for {url}: {e}")
-            return False
+        with _write_lock:
+            with open(central_fpath, "a", encoding="utf-8") as file:
+                file.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        return True
     
     def get_urls_of_type_thread(self, article_type, page_number):
         """" Get urls of articles in a specific type in a page"""
